@@ -2,10 +2,12 @@
 
 > A living, interactive generative light canvas and fluid particle wallpaper responding in real-time to pointer and touch movements.
 
-[![Vercel](https://img.shields.io/badge/Deploy-Vercel-black?style=for-the-badge&logo=vercel)](https://vercel.com)
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-liquid--wallpaper.vercel.app-000?style=for-the-badge&logo=vercel&logoColor=white)](https://liquid-wallpaper.vercel.app/)
 [![React](https://img.shields.io/badge/React-19-61dafb?style=for-the-badge&logo=react)](https://react.dev)
 [![Vite](https://img.shields.io/badge/Vite-8-646cff?style=for-the-badge&logo=vite)](https://vite.dev)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE)
+
+🔗 **Live Application**: [https://liquid-wallpaper.vercel.app/](https://liquid-wallpaper.vercel.app/)
 
 ---
 
