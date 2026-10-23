@@ -26,3 +26,5 @@ dist-ssr
 # Vercel
 .vercel
 
+# macOS Text Clippings
+*.textClipping

@@ -1,264 +1,294 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import "./App.css";
 
+const PRESETS = {
+  Nebula: {
+    name: "Nebula",
+    tubes: ["#5e72e4", "#8965e0", "#f5365c"],
+    lights: ["#21d4fd", "#b721ff", "#f4d03f", "#11cdef"],
+  },
+  Cyberpunk: {
+    name: "Cyberpunk",
+    tubes: ["#ff007f", "#7928ca", "#00f0ff"],
+    lights: ["#ff0055", "#00f0ff", "#7928ca", "#ffe600"],
+  },
+  Ocean: {
+    name: "Ocean",
+    tubes: ["#0070f3", "#00dfd8", "#7928ca"],
+    lights: ["#00dfd8", "#0070f3", "#50e3c2", "#11cdef"],
+  },
+  Solar: {
+    name: "Solar",
+    tubes: ["#ff4b1f", "#ff9068", "#ff0844"],
+    lights: ["#ff4e50", "#f9d423", "#ff0844", "#ffb199"],
+  },
+  Acid: {
+    name: "Acid",
+    tubes: ["#10b981", "#06b6d4", "#84cc16"],
+    lights: ["#34d399", "#a3e635", "#22d3ee", "#4ade80"],
+  },
+};
+
+/**
+ * Generates an array of random hex color strings.
+ * @param {number} count - The number of random colors to generate.
+ * @returns {string[]} An array of color strings.
+ */
+function randomColors(count) {
+  return new Array(count)
+    .fill(0)
+    .map(() => "#" + Math.floor(Math.random() * 16777215).toString(16).padStart(6, "0"));
+}
+
 export default function App() {
-    const canvasRef = useRef(null);
-    const [hue, setHue] = useState(205);
-    const [intensity, setIntensity] = useState(70);
-    const [trailLength, setTrailLength] = useState(75);
-    const [activePreset, setActivePreset] = useState("Ocean");
+  const canvasRef = useRef(null);
+  const appRef = useRef(null);
 
-    const presets = {
-        Ocean: { hue: 205, intensity: 70, trail: 75 },
-        Solar: { hue: 18, intensity: 90, trail: 95 },
-        Cyberpunk: { hue: 290, intensity: 105, trail: 110 },
+  const [activePreset, setActivePreset] = useState("Nebula");
+  const [tubeColors, setTubeColors] = useState(PRESETS.Nebula.tubes);
+  const [lightColors, setLightColors] = useState(PRESETS.Nebula.lights);
+  const [isZenMode, setIsZenMode] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // Initialize the TubesCursor 3D animation
+  useEffect(() => {
+    let isMounted = true;
+
+    const initTimer = setTimeout(async () => {
+      try {
+        let module;
+        const dynamicImport = (u) => new Function("url", "return import(url)")(u);
+
+        try {
+          // Primary: load from local bundle in public folder
+          module = await dynamicImport("/tubes1.min.js");
+        } catch {
+          // Fallback: CDN
+          module = await dynamicImport(
+            "https://cdn.jsdelivr.net/npm/threejs-components@0.0.19/build/cursors/tubes1.min.js"
+          );
+        }
+
+        if (!isMounted || !canvasRef.current) return;
+
+        const TubesCursor = module.default;
+
+        const app = TubesCursor(canvasRef.current, {
+          tubes: {
+            colors: PRESETS.Nebula.tubes,
+            lights: {
+              intensity: 200,
+              colors: PRESETS.Nebula.lights,
+            },
+          },
+        });
+
+        appRef.current = app;
+      } catch (err) {
+        console.error("Failed to load TubesCursor module:", err);
+      }
+    }, 120);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(initTimer);
+      if (appRef.current && typeof appRef.current.dispose === "function") {
+        appRef.current.dispose();
+        appRef.current = null;
+      }
     };
+  }, []);
 
-    function applyPreset(name) {
-        const preset = presets[name];
-        setHue(preset.hue);
-        setIntensity(preset.intensity);
-        setTrailLength(preset.trail);
-        setActivePreset(name);
+  // Applies a predefined color atmospheric preset
+  const applyPreset = useCallback((key) => {
+    const preset = PRESETS[key];
+    if (!preset) return;
+
+    setTubeColors(preset.tubes);
+    setLightColors(preset.lights);
+    setActivePreset(preset.name);
+
+    if (appRef.current?.tubes) {
+      appRef.current.tubes.setColors(preset.tubes);
+      appRef.current.tubes.setLightsColors(preset.lights);
     }
+  }, []);
 
-    function checkPreset(newHue, newIntensity, newTrail) {
-        const matched = Object.entries(presets).find(
-            ([, p]) => p.hue === newHue && p.intensity === newIntensity && p.trail === newTrail
-        );
-        setActivePreset(matched ? matched[0] : "Custom");
+  // Randomizes the tube and light colors
+  const randomizeColors = useCallback(() => {
+    const newTubes = randomColors(3);
+    const newLights = randomColors(4);
+
+    setTubeColors(newTubes);
+    setLightColors(newLights);
+    setActivePreset("Custom");
+
+    if (appRef.current?.tubes) {
+      appRef.current.tubes.setColors(newTubes);
+      appRef.current.tubes.setLightsColors(newLights);
     }
+  }, []);
 
-    useEffect(() => {
-        const canvas = canvasRef.current;
-        const context = canvas.getContext("2d");
-        const drops = [];
-        let animationFrame;
-        let lastX = window.innerWidth / 2;
-        let lastY = window.innerHeight / 2;
-        let lastTime = performance.now();
+  // Clicking the backdrop triggers color randomization
+  const handleContainerClick = (e) => {
+    // Prevent triggering when clicking interactive controls
+    if (e.target.closest("button") || e.target.closest("aside") || e.target.closest(".topbar")) {
+      return;
+    }
+    randomizeColors();
+  };
 
-        function resizeCanvas() {
-            const scale = window.devicePixelRatio || 1;
-            canvas.width = window.innerWidth * scale;
-            canvas.height = window.innerHeight * scale;
-            context.setTransform(scale, 0, 0, scale, 0, 0);
-        }
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {});
+      setIsFullscreen(true);
+    } else {
+      document.exitFullscreen().catch(() => {});
+      setIsFullscreen(false);
+    }
+  };
 
-        function createDrop(x, y, speed, angle) {
-            const size = 7 + Math.min(speed * 0.14, 25);
+  return (
+    <div
+      onClick={handleContainerClick}
+      className={`app-container ${isZenMode ? "zen-mode" : ""}`}
+    >
+      {/* 3D WebGL Canvas positioned behind the interface */}
+      <canvas ref={canvasRef} className="tubes-canvas" />
 
-            drops.push({
-                x,
-                y,
-                radius: size,
-                opacity: 0.75,
-                hue: hue + Math.min(speed * 0.5, 100),
-                stretchX: Math.cos(angle) * speed * 0.12,
-                stretchY: Math.sin(angle) * speed * 0.12,
-            });
+      {/* Top Navigation Bar */}
+      <header className="topbar">
+        <a className="brand" href="/" onClick={(e) => e.stopPropagation()}>
+          <span className="brand-mark">✦</span>
+          <span className="brand-title">AURA</span>
+          <span className="brand-tag">TUBES 3D</span>
+        </a>
 
-            if (drops.length > trailLength * 2) drops.shift();
-        }
+        <div className="topbar-actions">
+          <div className="live-status">
+            <span className="status-dot" />
+            <span className="status-label">WebGL Active</span>
+          </div>
 
-        function draw() {
-            context.fillStyle = "rgba(6, 8, 22, 0.22)";
-            context.fillRect(0, 0, window.innerWidth, window.innerHeight);
-            context.globalCompositeOperation = "screen";
+          <button
+            type="button"
+            className="action-btn"
+            title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
+            onClick={toggleFullscreen}
+          >
+            {isFullscreen ? "⛶ Exit" : "⛶ Fullscreen"}
+          </button>
 
-            for (let index = drops.length - 1; index >= 0; index--) {
-                const drop = drops[index];
-                const radius = drop.radius * (1 + intensity / 100);
+          <button
+            type="button"
+            className={`action-btn ${isZenMode ? "active" : ""}`}
+            title="Toggle Zen Wallpaper View"
+            onClick={() => setIsZenMode((prev) => !prev)}
+          >
+            {isZenMode ? "Show HUD" : "Zen Mode"}
+          </button>
+        </div>
+      </header>
 
-                const glow = context.createRadialGradient(
-                    drop.x,
-                    drop.y,
-                    0,
-                    drop.x + drop.stretchX,
-                    drop.y + drop.stretchY,
-                    radius * 3,
-                );
+      {/* Central Hero Typography */}
+      <section className="hero">
+        <div className="hero-badge">3D KINETIC LIGHTFIELD</div>
+        <h1 className="hero-title">
+          <span className="title-lead">Tubes</span>
+          <br />
+          <span className="title-accent">Cursor</span>
+        </h1>
+        <p className="hero-subtitle">
+          A dynamic three-dimensional fluid light sculpture responding to kinetic gesture.
+        </p>
 
-                glow.addColorStop(
-                    0,
-                    `hsla(${drop.hue}, 100%, 78%, ${drop.opacity})`,
-                );
-                glow.addColorStop(
-                    0.3,
-                    `hsla(${drop.hue + 35}, 100%, 60%, ${drop.opacity * 0.58})`,
-                );
-                glow.addColorStop(
-                    0.65,
-                    `hsla(${drop.hue + 85}, 100%, 50%, ${drop.opacity * 0.18})`,
-                );
-                glow.addColorStop(1, "rgba(0, 0, 0, 0)");
+        {/* Live Active Palette Swatch */}
+        <div className="palette-preview" title="Current active palette">
+          <span className="palette-label">Palette:</span>
+          <div className="swatches">
+            {tubeColors.map((color, idx) => (
+              <span
+                key={`tube-${idx}`}
+                className="swatch-dot"
+                style={{ backgroundColor: color, boxShadow: `0 0 10px ${color}` }}
+                title={`Tube color: ${color}`}
+              />
+            ))}
+            <span className="swatch-divider" />
+            {lightColors.map((color, idx) => (
+              <span
+                key={`light-${idx}`}
+                className="swatch-dot light-swatch"
+                style={{ backgroundColor: color, boxShadow: `0 0 10px ${color}` }}
+                title={`Light color: ${color}`}
+              />
+            ))}
+          </div>
+        </div>
+      </section>
 
-                context.fillStyle = glow;
-                context.beginPath();
-                context.ellipse(
-                    drop.x,
-                    drop.y,
-                    radius * 3 + Math.abs(drop.stretchX),
-                    radius * 3 + Math.abs(drop.stretchY),
-                    0,
-                    0,
-                    Math.PI * 2,
-                );
-                context.fill();
+      {/* Floating Bottom Left Interaction Hint */}
+      <div className="hint">
+        <span className="hint-icon">⚡</span>
+        <span>Click anywhere to randomize • Move to sculpt light</span>
+      </div>
 
-                drop.radius += 0.85;
-                drop.opacity -= 0.012;
+      {/* Floating Interactive Controls HUD */}
+      <aside className="controls" onClick={(e) => e.stopPropagation()}>
+        <div className="control-heading">
+          <span className="heading-title">Atmosphere</span>
+          <span className="preset-name">{activePreset}</span>
+        </div>
 
-                if (drop.opacity <= 0) drops.splice(index, 1);
-            }
+        {/* Curated Preset Buttons */}
+        <div className="preset-grid">
+          {Object.keys(PRESETS).map((key) => (
+            <button
+              key={key}
+              type="button"
+              className={`preset-btn ${activePreset === key ? "active" : ""}`}
+              onClick={() => applyPreset(key)}
+            >
+              {key}
+            </button>
+          ))}
+        </div>
 
-            context.globalCompositeOperation = "source-over";
-            animationFrame = requestAnimationFrame(draw);
-        }
+        {/* Randomize / Morph Trigger */}
+        <button
+          type="button"
+          className="randomize-btn"
+          onClick={randomizeColors}
+        >
+          <span className="btn-icon">🎲</span>
+          <span>Shuffle Palette</span>
+        </button>
+      </aside>
 
-        function handlePointerMove(event) {
-            const now = performance.now();
-            const distance = Math.hypot(event.clientX - lastX, event.clientY - lastY);
-            if (distance > 260) {
-                lastX = event.clientX;
-                lastY = event.clientY;
-                lastTime = now;
-                return;
-            }
-            const elapsed = Math.max(now - lastTime, 16);
-            const speed = (distance / elapsed) * 16;
-            const angle = Math.atan2(event.clientY - lastY, event.clientX - lastX);
+      {/* Zen Mode Exit Reminder */}
+      {isZenMode && (
+        <button
+          type="button"
+          className="zen-restore-btn"
+          onClick={() => setIsZenMode(false)}
+        >
+          ✦ Exit Zen Mode
+        </button>
+      )}
 
-            createDrop(event.clientX, event.clientY, speed, angle);
-
-            lastX = event.clientX;
-            lastY = event.clientY;
-            lastTime = now;
-        }
-
-        function handlePointerDown(event) {
-            lastX = event.clientX;
-            lastY = event.clientY;
-            lastTime = performance.now();
-            createDrop(event.clientX, event.clientY, 32, 0);
-        }
-
-        resizeCanvas();
-        draw();
-
-        window.addEventListener("resize", resizeCanvas);
-        window.addEventListener("pointermove", handlePointerMove);
-        window.addEventListener("pointerdown", handlePointerDown);
-
-        return () => {
-            cancelAnimationFrame(animationFrame);
-            window.removeEventListener("resize", resizeCanvas);
-            window.removeEventListener("pointermove", handlePointerMove);
-            window.removeEventListener("pointerdown", handlePointerDown);
-        };
-    }, [hue, intensity, trailLength]);
-
-    return (
-        <main>
-            <canvas ref={canvasRef} />
-
-            <header className="topbar">
-                <a className="brand" href="/">
-                    <span className="brand-mark">✦</span>
-                    AURA
-                </a>
-
-                <div className="live-status">
-                    <span className="status-dot" />
-                    Live canvas
-                </div>
-            </header>
-
-            <section className="hero">
-                <p className="eyebrow">GENERATIVE LIGHT / 001</p>
-                <h1>
-                    Touch the
-                    <br />
-                    <em>unknown.</em>
-                </h1>
-                <p className="hero-copy">
-                    A living field of colour that responds to every movement.
-                </p>
-            </section>
-
-            <div className="hint">
-                <span className="mouse-icon">⌁</span>
-                Move to create
-            </div>
-
-            <aside className="controls">
-                <div className="control-heading">
-                    <span>Atmosphere</span>
-                    <span className="preset">{activePreset}</span>
-                </div>
-
-                <div className="preset-buttons">
-                    {Object.keys(presets).map((name) => (
-                        <button
-                            className={activePreset === name ? "active" : ""}
-                            key={name}
-                            onClick={() => applyPreset(name)}
-                        >
-                            {name}
-                        </button>
-                    ))}
-                </div>
-
-                <label>
-                    Colour ({hue}°)
-                    <input
-                        type="range"
-                        min="0"
-                        max="360"
-                        value={hue}
-                        onChange={(event) => {
-                            const val = Number(event.target.value);
-                            setHue(val);
-                            checkPreset(val, intensity, trailLength);
-                        }}
-                    />
-                </label>
-
-                <label>
-                    Glow ({intensity}%)
-                    <input
-                        type="range"
-                        min="20"
-                        max="120"
-                        value={intensity}
-                        onChange={(event) => {
-                            const val = Number(event.target.value);
-                            setIntensity(val);
-                            checkPreset(hue, val, trailLength);
-                        }}
-                    />
-                </label>
-
-                <label>
-                    Trail ({trailLength})
-                    <input
-                        type="range"
-                        min="25"
-                        max="120"
-                        value={trailLength}
-                        onChange={(event) => {
-                            const val = Number(event.target.value);
-                            setTrailLength(val);
-                            checkPreset(hue, intensity, val);
-                        }}
-                    />
-                </label>
-            </aside>
-
-            <footer>
-                <span>© 2026 AURA LABS</span>
-                <span>EXPERIMENT 01</span>
-            </footer>
-        </main>
-    );
+      {/* Footer */}
+      <footer>
+        <span>© 2026 AURA LABS</span>
+        <span className="footer-dot">•</span>
+        <a
+          href="https://github.com/ayushpatil5408/Liquid-Wallpaper"
+          target="_blank"
+          rel="noreferrer"
+          className="footer-link"
+        >
+          GitHub Repo
+        </a>
+      </footer>
+    </div>
+  );
 }
